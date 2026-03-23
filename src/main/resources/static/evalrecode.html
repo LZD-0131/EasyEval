@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>英语作文批改记录</title>
+    <!-- 引入 WeUI 样式 -->
+    <link rel="stylesheet" href="https://res.wx.qq.com/open/libs/weui/2.4.0/weui.min.css">
+    <script type="text/javascript" src="https://res.wx.qq.com/t/wx_fed/weui.js/res/1.2.19/weui.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/iscroll/5.2.0/iscroll.min.js"></script>
+    <style>
+        /* 启用滚动 */
+        .scrollable-dialog {
+            max-height: 300px;
+            overflow-y: scroll;
+        }
+    </style>
+</head>
+<body>
+<div class="weui-cells" id="essay-list">
+    <!-- 英语作文记录将会动态添加到这里 -->
+</div>
+
+<script>
+    var myScroll; // 声明 iScroll 对象
+
+    // 页面加载时执行的函数
+    window.onload = function () {
+        const code = getParameterByName("code");
+
+        if (!code) {
+            document.getElementById('essay-list').innerHTML = '<div class="weui-cells__title">请从微信公众号菜单进入</div>';
+            return;
+        }
+
+        const requestData = {code};
+
+        fetch("/api/ecc/eval_record", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(requestData)
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (!data || data.status !== 200) {
+                    alert((data && data.message) ? data.message : "查询失败");
+                    return;
+                }
+                renderEssayRecords(data.data || []);
+            })
+            .catch(error => {
+                console.error("发生错误:", error);
+            });
+    };
+
+    // 获取 URL 中的参数值
+    function getParameterByName(name) {
+        name = name.replace(/[\[]/, "\\[").replace(/[\]]/, "\\]");
+        var regex = new RegExp("[\\?&]" + name + "=([^&#]*)");
+        var results = regex.exec(location.search);
+        return results === null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
+    }
+
+    // 渲染英语作文记录的函数
+    function renderEssayRecords(records) {
+        const container = document.getElementById('essay-list');
+        if (!records || records.length === 0) {
+            container.innerHTML = '<div class="weui-cells__title">暂无批改记录</div>';
+            return;
+        }
+
+        records.forEach(record => {
+            let essayContent = {};
+            let correctionResult = {};
+            try {
+                essayContent = record.essayContent ? JSON.parse(record.essayContent) : {};
+            } catch (e) {
+                console.error("essayContent 解析失败:", e, record.essayContent);
+            }
+            try {
+                correctionResult = record.correctionResult ? JSON.parse(record.correctionResult) : {};
+            } catch (e) {
+                console.error("correctionResult 解析失败:", e, record.correctionResult);
+            }
+            const result = correctionResult.Result || correctionResult.result || {};
+            const majorScore = result.majorScore || {};
+            const essayFeedback = result.essayFeedback || {};
+            const sentsFeedback = essayFeedback.sentsFeedback || [];
+
+            const essayItem = document.createElement('div');
+            essayItem.className = 'weui-cells__title';
+
+            // 在每行中显示每条记录
+            essayItem.innerHTML = `
+                    <div class="weui-cell">
+                        <div class="weui-cell__bd">
+                            <p>标题: ${essayContent.title}</p>
+                            <p>年级: ${essayContent.grade}</p>
+                            <p>批改时间: ${record.updatedAt || record.createdAt || ''}</p>
+                        </div>
+                        <div class="weui-cell__ft">
+                            <button class="weui-btn weui-btn_mini weui-btn_primary show-details">显示详情</button>
+                        </div>
+                    </div>
+                `;
+
+            container.appendChild(essayItem);
+
+            const detailsButton = essayItem.querySelector('.show-details');
+            detailsButton.addEventListener('click', () => {
+                // 创建一个 WeUI 弹出层
+                const feedbackHtml = sentsFeedback.length > 0
+                    ? sentsFeedback.map(sent => {
+                        if (!sent.errorPosInfos || sent.errorPosInfos.length === 0) {
+                            return '';
+                        }
+                        const errors = sent.errorPosInfos.map(err => {
+                            const title = err.errorTypeTitle || err.reason || '错误';
+                            const org = err.orgChunk || '';
+                            const cor = err.correctChunk || '';
+                            const exp = err.knowledgeExp ? `(${err.knowledgeExp})` : '';
+                            return `- ${title}: ${org} → ${cor} ${exp}<br>`;
+                        }).join('');
+                        return `<div style="margin-bottom: 10px;"><strong>原句：</strong>${sent.rawSent || ''}<br>${errors}</div>`;
+                    }).join('')
+                    : '<div>太棒了，没有发现明显的语法错误！</div>';
+
+                const dialogContent = `
+    <div class="scrollable-dialog" id="scrollable-dialog">
+        总得分: ${result.totalScore || 0} / ${result.fullScore || 0}<br>
+        得分详情:<br>
+        - 词汇得分: ${majorScore.wordScore || 0}<br>
+        - 语法得分: ${majorScore.grammarScore || 0}<br>
+        - 结构得分: ${majorScore.structureScore || 0}<br>
+        - 内容建议: ${result.essayAdvice || '暂无建议'}<br>
+        整体评价: ${result.totalEvaluation || '暂无评价'}<br>
+        句子点评:<br>
+        ${feedbackHtml}
+    </div>`;
+
+                const dialog = weui.dialog({
+                    title: '批改详情',
+                    content: dialogContent,
+                    className: 'scrollable-dialog'
+                });
+
+                // 监听弹出层的打开事件后初始化 iScroll
+                dialog.on('open', () => {
+                    setTimeout(function () {
+                        myScroll = new IScroll('#scrollable-dialog', {
+                            mouseWheel: true,
+                            scrollbars: true,
+                            fadeScrollbars: true
+                        });
+                    }, 0);
+                });
+            });
+        });
+    }
+</script>
+</body>
+</html>

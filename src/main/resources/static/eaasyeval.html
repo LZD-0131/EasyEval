@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>英语作文批改提交</title>
+    <link rel="stylesheet" href="https://res.wx.qq.com/t/wx_fed/weui-source/res/2.6.7/weui.css">
+    <style>
+        .weui-cells__title { font-weight: bold; color: #333; }
+        .score-red { color: red; font-weight: bold; }
+        .advice-box { padding: 10px; background-color: #f8f8f8; border-radius: 5px; margin-top: 5px; font-size: 14px; color: #666; }
+        .error-chunk { color: red; text-decoration: line-through; margin-right: 5px; }
+        .correct-chunk { color: green; font-weight: bold; }
+    </style>
+</head>
+<body class="weui-view">
+<h1 class="weui-title" style="text-align: center; margin-top: 20px;">英语作文批改系统</h1>
+
+<form id="essayForm" class="weui-form">
+    <div class="weui-cell">
+        <div class="weui-cell__bd">
+            <input class="weui-input" type="text" id="title" name="title" placeholder="请输入作文标题" required>
+        </div>
+    </div>
+    <div class="weui-cell">
+        <div class="weui-cell__bd">
+            <textarea class="weui-textarea" id="content" name="content" placeholder="请输入作文内容" rows="8" required></textarea>
+        </div>
+    </div>
+    <div class="weui-cell">
+        <div class="weui-cell__hd">
+            <label class="weui-label">英语级别</label>
+        </div>
+        <div class="weui-cell__bd">
+            <select class="weui-select" id="level" name="level">
+                <option value="elementary">小学</option>
+                <option value="junior">初中</option>
+                <option value="high" selected>高中</option>
+                <option value="cet4">大学英语四级</option>
+                <option value="cet6">大学英语六级</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="weui-btn-area">
+        <a class="weui-btn weui-btn_primary" href="javascript:" id="submitBtn">提交批改</a>
+    </div>
+</form>
+
+<!-- 结果展示区，默认隐藏 -->
+<div id="resultArea" style="display: none;">
+    <div class="weui-cells__title">综合得分</div>
+    <div class="weui-cells">
+        <div class="weui-cell">
+            <div class="weui-cell__bd">总得分</div>
+            <div class="weui-cell__ft score-red" id="totalScore">0.0</div>
+        </div>
+        <div class="weui-cell">
+            <div class="weui-cell__bd">词汇得分</div>
+            <div class="weui-cell__ft" id="wordsScore">0.0</div>
+        </div>
+        <div class="weui-cell">
+            <div class="weui-cell__bd">语法得分</div>
+            <div class="weui-cell__ft" id="grammarScore">0.0</div>
+        </div>
+        <div class="weui-cell">
+            <div class="weui-cell__bd">结构得分</div>
+            <div class="weui-cell__ft" id="structureScore">0.0</div>
+        </div>
+    </div>
+
+    <div class="weui-cells__title">整体评价与建议</div>
+    <div class="weui-cells">
+        <div class="weui-cell">
+            <div class="weui-cell__bd">
+                <div id="totalEvaluation"></div>
+                <div class="advice-box" id="essayAdvice"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="weui-cells__title">句子详细批改</div>
+    <div class="weui-cells" id="sentenceCommentsSection">
+        <!-- 动态渲染句子批改结果 -->
+    </div>
+</div>
+
+<!-- 提示 Toast -->
+<div id="loadingToast" style="display:none;">
+    <div class="weui-mask_transparent"></div>
+    <div class="weui-toast">
+        <i class="weui-loading weui-icon_toast"></i>
+        <p class="weui-toast__content">正在批改中...</p>
+    </div>
+</div>
+
+<script>
+    // 获取页面URL中的参数
+function getUrlParameter(name) {
+        name = name.replace(/[\[]/, "\\[").replace(/[\]]/, "\\]");
+        var regex = new RegExp("[\\?&]" + name + "=([^&#]*)");
+        var results = regex.exec(location.search);
+        return results === null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
+    }
+
+    function getFriendlyErrorMessage(message) {
+        if (!message) {
+            return "批改失败，请稍后再试";
+        }
+        if (message.includes("微信授权已")) {
+            return message + "。请返回公众号菜单重新进入当前页面。";
+        }
+        return message;
+    }
+
+    document.getElementById("submitBtn").addEventListener("click", function () {
+        const title = document.getElementById("title").value.trim();
+        const content = document.getElementById("content").value.trim();
+        const level = document.getElementById("level").value;
+        const code = getUrlParameter("code"); // 从地址栏自动截取 code
+
+        if (!title || !content) {
+            alert("标题和内容不能为空！");
+            return;
+        }
+
+        if (!code) {
+            alert("未获取到微信授权信息，请从微信公众号菜单重新进入！");
+            return;
+        }
+
+        const essayData = {
+            title: title,
+            content: content,
+            grade: level,
+            code: code // 将 code 放入请求体传给后端
+        };
+
+        // 显示 loading
+        document.getElementById("loadingToast").style.display = "block";
+        document.getElementById("submitBtn").classList.add("weui-btn_disabled");
+
+        // 发送请求到后端接口 (注意：这里使用相对路径，前提是前后端在同一个域下运行)
+        fetch("/api/ecc/submit", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(essayData)
+        })
+        .then(async response => {
+            const text = await response.text();
+            try {
+                return JSON.parse(text);
+            } catch (error) {
+                throw new Error("服务器返回结果异常，请稍后重试");
+            }
+        })
+        .then(data => {
+            // 隐藏 loading
+            document.getElementById("loadingToast").style.display = "none";
+            document.getElementById("submitBtn").classList.remove("weui-btn_disabled");
+
+            if (data && data.status === 200) {
+                displayEssayResults(data.data);
+            } else {
+                alert("批改失败：" + getFriendlyErrorMessage(data.message));
+            }
+        })
+        .catch(error => {
+            document.getElementById("loadingToast").style.display = "none";
+            document.getElementById("submitBtn").classList.remove("weui-btn_disabled");
+            alert("批改失败：" + getFriendlyErrorMessage(error.message));
+        });
+    });
+
+    // 渲染有道云批改结果
+    function displayEssayResults(youdaoData) {
+        if (!youdaoData || !youdaoData.Result) {
+            alert("返回数据格式异常");
+            return;
+        }
+
+        const result = youdaoData.Result;
+        
+        // 显示结果区域
+        document.getElementById("resultArea").style.display = "block";
+
+        // 1. 渲染分数
+        document.getElementById("totalScore").textContent = result.totalScore + " / " + result.fullScore;
+        if(result.majorScore) {
+            document.getElementById("wordsScore").textContent = result.majorScore.wordScore || 0;
+            document.getElementById("grammarScore").textContent = result.majorScore.grammarScore || 0;
+            document.getElementById("structureScore").textContent = result.majorScore.structureScore || 0;
+        }
+
+        // 2. 渲染整体评价
+        document.getElementById("totalEvaluation").textContent = result.totalEvaluation || "暂无评价";
+        document.getElementById("essayAdvice").textContent = result.essayAdvice || "暂无建议";
+
+        // 3. 渲染句子级详细批改
+        const section = document.getElementById("sentenceCommentsSection");
+        section.innerHTML = ''; // 清空旧数据
+
+        if (result.essayFeedback && result.essayFeedback.sentsFeedback) {
+            result.essayFeedback.sentsFeedback.forEach(sent => {
+                // 如果没有错误信息，就不展示这句话
+                if (!sent.errorPosInfos || sent.errorPosInfos.length === 0) return;
+
+                let errorsHtml = '';
+                sent.errorPosInfos.forEach(err => {
+                    errorsHtml += `
+                        <div style="margin-bottom: 8px;">
+                            <div>错误类型: <span style="color:#e64340">${err.errorTypeTitle || err.reason}</span></div>
+                            <div>
+                                <span class="error-chunk">${err.orgChunk}</span> 
+                                ➔ <span class="correct-chunk">${err.correctChunk}</span>
+                            </div>
+                            ${err.knowledgeExp ? `<div style="font-size:12px; color:#888; margin-top:4px;">💡 解析: ${err.knowledgeExp}</div>` : ''}
+                        </div>
+                    `;
+                });
+
+                section.innerHTML += `
+                    <div class="weui-cell" style="display:block; padding: 16px;">
+                        <div style="margin-bottom: 10px;"><strong>原句：</strong>${sent.rawSent}</div>
+                        <div class="advice-box">${errorsHtml}</div>
+                    </div>
+                `;
+            });
+            
+            if(section.innerHTML === '') {
+                 section.innerHTML = '<div class="weui-cell"><div class="weui-cell__bd" style="color:green; text-align:center;">太棒了，没有发现明显的语法错误！</div></div>';
+            }
+        } else {
+            section.innerHTML = '<div class="weui-cell"><div class="weui-cell__bd">暂无句子详细批改数据</div></div>';
+        }
+        
+        // 页面滚动到结果区
+        document.getElementById("resultArea").scrollIntoView({ behavior: 'smooth' });
+    }
+</script>
+</body>
+</html>

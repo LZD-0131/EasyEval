@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>管理员后台充值页面</title>
+    <!-- 引入WeUI样式 -->
+    <link rel="stylesheet" href="https://res.wx.qq.com/open/libs/weui/2.0.1/weui.min.css">
+</head>
+<body>
+<div class="weui-cells__title">管理员后台充值页面</div>
+<div class="weui-cells weui-cells_form">
+    <div class="weui-cell">
+        <div class="weui-cell__hd"><label class="weui-label">用户OpenID</label></div>
+        <div class="weui-cell__bd">
+            <input id="openid" class="weui-input" type="text" placeholder="请输入用户OpenID">
+        </div>
+    </div>
+    <div class="weui-cell">
+        <div class="weui-cell__hd"><label class="weui-label">付款金额（元）</label></div>
+        <div class="weui-cell__bd">
+            <input id="paymentAmount" class="weui-input" type="number" placeholder="请输入付款金额">
+        </div>
+    </div>
+    <div class="weui-cell weui-cell_select weui-cell_select-after">
+        <div class="weui-cell__hd"><label class="weui-label">用户付款时间</label></div>
+        <div class="weui-cell__bd">
+            <input id="paymentDate" class="weui-input" type="date">
+        </div>
+    </div>
+</div>
+<div class="weui-btn-area">
+    <a href="javascript:;" class="weui-btn weui-btn_primary" id="submitBtn">提交</a>
+</div>
+
+<!-- JavaScript代码 -->
+<script>
+    document.getElementById("submitBtn").addEventListener("click", function () {
+        var openid = document.getElementById("openid").value;
+        var paymentAmount = document.getElementById("paymentAmount").value;
+        var paymentDate = document.getElementById("paymentDate").value;
+
+        // 检查是否所有信息都已输入
+        if (openid.trim() === "" || paymentAmount.trim() === "" || paymentDate.trim() === "") {
+            alert("请填写所有信息");
+        } else {
+            // 构建要发送到服务器的数据
+            var requestData = {
+                wechat_id: openid,
+                payment_amount: paymentAmount,
+                payment_date: paymentDate
+            };
+
+            // 发起POST请求到服务器，使用相对路径
+            fetch("/api/admin/pay", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(requestData)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    // 处理后台返回的响应。注意：后端的 status 是数字类型 200，不是字符串 "200"
+                    if (data.status === 200) {
+                        alert("充值成功");
+                    } else {
+                        alert("充值失败：" + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert("请求失败：" + error);
+                });
+        }
+    });
+</script>
+</body>
+</html>
